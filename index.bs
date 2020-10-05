@@ -1,0 +1,155 @@
+<pre class='metadata'>
+Title: Streamed Font Format
+Shortname: sff
+Level: 1
+Status: LD
+URL: https://simoncozens.github.io/sff-spec
+Editor: Simon Cozens, Corvel Software, simon@simon-cozens.org
+Repository: simoncozens/sff-spec
+Markup Shorthands: markdown yes
+Abstract: A font format optimized for streaming delivery.
+</pre>
+
+Introduction {#intro}
+=====================
+
+Introduction here.
+
+General structure {#structure}
+==============================
+
+SFF data is a series of *records*. Records may be either [=glyph records=],
+[=layout records=] or [=metadata records=]. These records may be transmitted in any order. Implementations may render text in SFF format either by processing a series of SFF records directly, or by dynamically and incrementally converting those records to other font formats such as OFF.
+
+* SFF is a wire protocol, and as such has no header, relying on out-of-band
+    signalling (e.g. MIME type, HTTP headers) for identification and data length
+    information. If it is serialized to a file, the first record must be
+    preceded with the four bytes `0x53 0x46 0x46 0x20` (`SFF `).
+
+* Data structures in SFF are big-endian.
+
+<div class="note">
+    Big endianness was chosen to facilitate binary copying of data
+    from SFF structures into OFF structures.
+</div>
+
+* Design units are based on a 1000 unit em square.
+
+<dfn>Glyph Records</dfn> {#glyphrecords}
+========================================
+
+The basic structure of a glyph record is:
+
+```
+RecordType Flags GID? Unicodes?  Metrics Points? Components? Variations?
+```
+
+A glyph record begins with two bytes:
+
+```
+RecordType: uint8 : 0x01 = Glyph
+Flags: uint8
+```
+
+The following flags are defined:
+
+```
+0b00000001: Glyph ID not present, increment previous by 1
+0b00000010: Codepoints not present, increment previous by 1
+0b00000100: Points not present
+0b00001000: Components not present
+0b00010000: Variations not present
+0b00100000: Layout is vertical
+```
+
+Glyph ID {#glyphID}
+-------------------
+
+If flag bit 0x1 is *not* set, the next element of the glyph record is
+a glyph ID:
+
+```
+GID: uint32BE
+```
+
+If bit 0x1 is set, the glyph ID is the ID of the most recently sent glyph record plus one and no glyph ID field is transmitted. The first glyph record in a stream must not have flag bit 0x1 set.
+
+Unicode Codepoints {#unicodecodepoints}
+---------------------------------------
+
+If flag bit 0x2 is *not* set, the next element of the glyph record is
+an array of Unicode code points:
+
+```
+uint8: countOfCodepoints
+uint8[]: codepoints
+```
+
+The codepoints array in `codepoints` contains the UTF-8 representation of
+the codepoints associated with the current glyph.
+
+<div class="note">
+    UTF-8 was chosen as the most efficient way, in terms of transferred
+    bytes, to represent a Unicode codepoint, while still being efficient
+    to decode.
+</div>
+
+If flag bit 0x2 *is* set, there is only one Unicode codepoint associated with this glyph, which is the codepoint of the most recently sent glyph record plus one, and the `countOfCodepoints` and `codepoints` fields are not transmitted. The first glyph record in a stream must not have flag bit 0x2 set.
+
+Metrics {#metrics}
+------------------
+
+The metrics component is mandatory, and consists of the following fields:
+
+```
+int16BE: advanceWidth / advanceHeight
+int16BE: lsb / tsb
+int16BE: xMin
+int16BE: yMin
+int16BE: xMax
+int16BE: yMax
+```
+
+All values are in font units.
+
+If flag bit 0x20 is not set, the first and second fields should be
+interpreted as advance width and left side bearing respectively. If it
+is set, the first and second fields should be interpreted as advance height
+and top side bearing.
+
+Points {#points}
+----------------
+
+If flag bit 0x4 is not set, the next component describes the glyph contours.
+
+```
+uint16BE: numberOfContours
+SimpleGlyphTable: contours
+```
+
+The format of `SimpleGlyphTable` is to be interpreted as defined by
+[[!iso14496-22]], section 5.3.4. `numberOfContours` describes the number of contours in the first field of the `SimpleGlyphTable` structure.
+
+<div class="note">
+Note that the interpretation and layout of `numberOfContours` differs
+from that of [[!iso14496-22]]. The use of `SimpleGlyphTable` is again
+intended for efficient binary copying into an OFF font structure.
+</div>
+
+If flag bit 0x4 is set, the points component is not present.
+
+Components {#components}
+------------------------
+
+If flag bit 0x8 is not set, the next component is a Composite Glyph Table
+as defined by [[!iso14496-22]], section 5.3.4. If the flag bit is set,
+this component is not present.
+
+Variations {#variations}
+------------------------
+
+<dfn>Layout Records</dfn> {#layoutrecords}
+===============================
+
+<dfn>Metadata Records</dfn> {#metadatarecords}
+===================================
